@@ -5,7 +5,7 @@ FROM openjdk:8-jre-slim
 LABEL author="GeyserMC Team" maintainer="support@geysermc.org"
 
 RUN apt-get update -y \
- && apt-get install -y unzip \
+ && apt-get install -y unzip ca-certificates openssl tzdata \
  && useradd -d /home/container -m container
  
 USER container

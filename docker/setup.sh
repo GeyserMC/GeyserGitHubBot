@@ -17,6 +17,7 @@ pkill java
 # Make config adjustments
 sed -i 's/motd1: "GeyserMC"/motd1: "'"$MOTD"'"/g' config.yml
 sed -i 's/motd2: "Another GeyserMC forced host."/motd2: "'"$MOTD"'"/g' config.yml
+sed -i 's/127.0.0.1/172.17.0.1/g' config.yml # remote address
 sed -i 's/: online/: floodgate/g' config.yml # auth-type
 sed -i 's/command-suggestions: true/command-suggestions: false/g' config.yml
 sed -i 's/100/10/g' config.yml # max-players

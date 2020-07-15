@@ -1,8 +1,25 @@
-// const { Docker } = require('node-docker-api')
+const { Docker } = require('node-docker-api')
 const https = require('https')
+const path = require('path')
 const fs = require('fs')
+const ip = require('ip')
 
-// const docker = new Docker({ socketPath: '/var/run/docker.sock' })
+const docker = new Docker({ socketPath: '/var/run/docker.sock' })
+const prFolder = './pr'
+const floodgateKey = './public-key.pem'
+const serverIP = ip.address()
+
+const allowedOwners = ['GeyserMC', 'rtm516']
+
+// Create the PR folder
+if (!fs.existsSync(prFolder)) {
+  fs.mkdirSync(prFolder)
+}
+
+if (!fs.existsSync(floodgateKey)) {
+  console.error('Cannot find the floodgate key!')
+  process.exit()
+}
 
 /**
  * This is the main entrypoint to your Probot app
@@ -16,6 +33,10 @@ module.exports = app => {
     const comment = context.payload.comment
     const repoOwner = context.payload.repository.owner.login
     const repoName = context.payload.repository.name
+
+    if (!allowedOwners.includes(repoOwner)) {
+      return
+    }
 
     // Check if the user is a collaborator
     let collaborator = false
@@ -64,7 +85,16 @@ module.exports = app => {
         artifactURL = (await context.github.actions.downloadArtifact({ owner: repoOwner, repo: repoName, artifact_id: artifactID, archive_format: 'zip' })).url
       } catch (ignored) { }
 
-      const fileName = `PR#${issue.number}.zip`
+      const individualPRFolder = `${prFolder}/${issue.number}`
+
+      // Create the individual PR folder and set permissions
+      if (!fs.existsSync(individualPRFolder)) {
+        fs.mkdirSync(individualPRFolder)
+        fs.chmodSync(individualPRFolder, 0o777)
+        fs.linkSync(floodgateKey, path.join(individualPRFolder, floodgateKey))
+      }
+
+      const fileName = `${individualPRFolder}/PR#${issue.number}.zip`
       const file = fs.createWriteStream(fileName)
       https.get(artifactURL, (response) => {
         if (response.statusCode === 200) {
@@ -75,7 +105,7 @@ module.exports = app => {
         }
 
         file.on('finish', () => {
-          file.close(() => startTestingDocker(app, context, issueComment, fileName))
+          file.close(() => buildTestingDocker(app, context, issueComment, individualPRFolder))
         })
       }).on('error', (e) => {
         appendComment(context, repoOwner, repoName, issueComment, `\n\nUnable to download artifact: ${e.message}`)
@@ -92,17 +122,54 @@ function getNiceDate () {
   return new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '') + ' UTC'
 }
 
-async function startTestingDocker (app, context, issueComment, fileName) {
+async function buildTestingDocker (app, context, issueComment, individualPRFolder) {
   const issue = context.payload.issue
   const repoOwner = context.payload.repository.owner.login
   const repoName = context.payload.repository.name
 
+  const containerName = 'geyser-pr-' + issue.number
+
   issueComment = await appendComment(context, repoOwner, repoName, issueComment, '\n\nFinished download, setting up docker container...')
 
-  app.log('Store PR#, filename, comment id and docker container name in a local db for tracking')
-  app.log(`Extract ${fileName}`)
-  app.log('Move to tmp dir')
-  app.log('Start docker container')
-  app.log('Update comment with connection url')
-  app.log(`minecraft://?addExternalServer=Test PR%23${issue.number}|(IP):(Port)`)
+  const existingContainer = docker.container.get(containerName)
+  existingContainer.stop()
+    .then(container => container.delete({ force: true }))
+    .then(() => {
+      startTestingDocker(app, context, issueComment, individualPRFolder)
+    })
+    .catch(error => {
+      app.log('Error on deletion of existing container: ' + error)
+      startTestingDocker(app, context, issueComment, individualPRFolder)
+    })
+}
+
+async function startTestingDocker (app, context, issueComment, individualPRFolder) {
+  const issue = context.payload.issue
+  const repoOwner = context.payload.repository.owner.login
+  const repoName = context.payload.repository.name
+
+  const containerName = 'geyser-pr-' + issue.number
+
+  docker.container.create({
+    Image: 'geyser-test',
+    name: containerName,
+    ExposedPorts: {
+      '19132/udp': {}
+    },
+    HostConfig: {
+      Binds: [
+        `${path.resolve(individualPRFolder)}:/home/container`
+      ],
+      PortBindings: {
+        '19132/udp': [{ HostPort: '' }]
+      }
+    }
+  })
+    .then(container => container.start())
+    .then(container => container.status())
+    .then(status => {
+      const port = status.data.NetworkSettings.Ports['19132/udp'][0].HostPort
+      appendComment(context, repoOwner, repoName, issueComment, `\n\nBuilt docker container.\n\nConnect via ${serverIP}:${port} (\`minecraft://?addExternalServer=Test%20PR%23${issue.number}|${serverIP}:${port}\`)`)
+    })
+    .catch(error => appendComment(context, repoOwner, repoName, issueComment, `\n\nFailed creating and starting docker container.\nError: ${error}`))
 }
