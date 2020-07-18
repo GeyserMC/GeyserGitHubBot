@@ -13,7 +13,7 @@ const serverIP = ip.address()
 
 Utils.setup(docker, prFolder)
 
-const allowedOwners = ['GeyserMC']
+const allowedOwners = ['GeyserMC', 'rtm516']
 
 // Create the PR folder
 if (!fs.existsSync(prFolder)) {
@@ -76,10 +76,10 @@ module.exports = app => {
     if (collaborator && pull != null && pull.state === 'open') {
       switch (comment.body.trim()) {
         case '!start-test-server':
-          runStartCommand(app, context)
+          runStartCommand(app, context, pull)
           break
         case '!stop-test-server':
-          runStopCommand(app, context)
+          runStopCommand(app, context, pull)
           break
 
         default:
@@ -94,8 +94,9 @@ module.exports = app => {
  *
  * @param {import('probot').Application} app The probot app instance
  * @param {import('probot').Context} context The webhook context
+ * @param {import('probot').Octokit.PullsGetResponse} pull The pull request
  */
-async function runStartCommand (app, context) {
+async function runStartCommand (app, context, pull) {
   const issue = context.payload.issue
   const comment = context.payload.comment
   const repoOwner = context.payload.repository.owner.login
@@ -108,7 +109,7 @@ async function runStartCommand (app, context) {
   let artifacts = null
 
   for (const workflow of workflows.workflow_runs) {
-    if (workflow.pull_requests[0].number === issue.number) {
+    if (workflow.head_sha === pull.head.sha) {
       artifacts = (await context.github.actions.listWorkflowRunArtifacts({ owner: repoOwner, repo: repoName, run_id: workflow.id })).data
       break
     }
@@ -172,6 +173,7 @@ async function runStartCommand (app, context) {
  *
  * @param {import('probot').Application} app The probot app instance
  * @param {import('probot').Context} context The webhook context
+ * @param {import('probot').Octokit.PullsGetResponse} pull The pull request
  */
 async function runStopCommand (app, context) {
   const issue = context.payload.issue
