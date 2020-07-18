@@ -4,10 +4,14 @@ const path = require('path')
 const fs = require('fs')
 const ip = require('ip')
 
+const Utils = require('./utils')
+
 const docker = new Docker({ socketPath: '/var/run/docker.sock' })
 const prFolder = './pr'
 const floodgateKey = './public-key.pem'
 const serverIP = ip.address()
+
+Utils.setup(docker, prFolder)
 
 const allowedOwners = ['GeyserMC']
 
@@ -16,6 +20,7 @@ if (!fs.existsSync(prFolder)) {
   fs.mkdirSync(prFolder)
 }
 
+// Make sure the floodgate key exists
 if (!fs.existsSync(floodgateKey)) {
   console.error('Cannot find the floodgate key!')
   process.exit()
@@ -33,9 +38,9 @@ module.exports = app => {
     const prNumber = context.payload.number
     const containerName = 'geyser-pr-' + prNumber
     app.log(`PR #${prNumber} closed/merged, removing container if it exists!`)
-    removeContainer(containerName, () => {
+    Utils.removeContainer(containerName, () => {
       app.log(`Removed container ${containerName}!`)
-      removeContainerFolder(prNumber)
+      Utils.removeContainerFolder(prNumber)
     })
   })
 
@@ -78,13 +83,19 @@ module.exports = app => {
   })
 }
 
+/**
+ * Start the build and start process and update the comment along the way
+ *
+ * @param {import('probot').Application} app The probot app instance
+ * @param {import('probot').Context} context The webhook context
+ */
 async function runStartCommand (app, context) {
   const issue = context.payload.issue
   const comment = context.payload.comment
   const repoOwner = context.payload.repository.owner.login
   const repoName = context.payload.repository.name
 
-  const initialComment = context.issue({ body: `Preparing and starting test server as requested by @${comment.user.login} at ${getNiceDate()}` })
+  const initialComment = context.issue({ body: `Preparing and starting test server as requested by @${comment.user.login} at ${Utils.getNiceDate()}` })
   let { data: issueComment } = await context.github.issues.createComment(initialComment)
 
   const { data: workflows } = await context.github.actions.listRepoWorkflowRuns({ owner: repoOwner, repo: repoName })
@@ -98,7 +109,7 @@ async function runStartCommand (app, context) {
   }
 
   if (artifacts == null) {
-    appendComment(context, repoOwner, repoName, issueComment, `\n\nNo artifacts found for PR #${issue.number}, its likely the build hasnt finished!`)
+    Utils.appendComment(context, repoOwner, repoName, issueComment, `\n\nNo artifacts found for PR #${issue.number}, its likely the build hasnt finished!`)
     return
   }
 
@@ -111,11 +122,11 @@ async function runStartCommand (app, context) {
   }
 
   if (artifactID === 0) {
-    appendComment(context, repoOwner, repoName, issueComment, '\n\nFound artifacts but no Standalone build was included!')
+    Utils.appendComment(context, repoOwner, repoName, issueComment, '\n\nFound artifacts but no Standalone build was included!')
     return
   }
 
-  issueComment = await appendComment(context, repoOwner, repoName, issueComment, '\n\nDownloading Geyser Standalone...')
+  issueComment = await Utils.appendComment(context, repoOwner, repoName, issueComment, '\n\nDownloading Geyser Standalone...')
 
   let artifactURL = ''
   try {
@@ -125,7 +136,7 @@ async function runStartCommand (app, context) {
   const individualPRFolder = `${prFolder}/${issue.number}`
 
   // Remove the individual PR folder if it exists
-  removeContainerFolder(issue.number)
+  Utils.removeContainerFolder(issue.number)
 
   // Create the individual PR folder and set permissions
   fs.mkdirSync(individualPRFolder)
@@ -138,7 +149,7 @@ async function runStartCommand (app, context) {
     if (response.statusCode === 200) {
       response.pipe(file)
     } else {
-      appendComment(context, repoOwner, repoName, issueComment, `\n\nUnable to download artifact, got response: ${response.statusCode} - ${response.statusMessage}`)
+      Utils.appendComment(context, repoOwner, repoName, issueComment, `\n\nUnable to download artifact, got response: ${response.statusCode} - ${response.statusMessage}`)
       return
     }
 
@@ -146,36 +157,43 @@ async function runStartCommand (app, context) {
       file.close(() => buildTestingDocker(app, context, issueComment, individualPRFolder))
     })
   }).on('error', (e) => {
-    appendComment(context, repoOwner, repoName, issueComment, `\n\nUnable to download artifact: ${e.message}`)
+    Utils.appendComment(context, repoOwner, repoName, issueComment, `\n\nUnable to download artifact: ${e.message}`)
   })
 }
 
+/**
+ * Stop the running docker container if it exists
+ *
+ * @param {import('probot').Application} app The probot app instance
+ * @param {import('probot').Context} context The webhook context
+ */
 async function runStopCommand (app, context) {
   const issue = context.payload.issue
   const comment = context.payload.comment
   const repoOwner = context.payload.repository.owner.login
   const repoName = context.payload.repository.name
 
-  const initialComment = context.issue({ body: `Stopping and removing test server as requested by @${comment.user.login} at ${getNiceDate()}` })
+  const initialComment = context.issue({ body: `Stopping and removing test server as requested by @${comment.user.login} at ${Utils.getNiceDate()}` })
   const { data: issueComment } = await context.github.issues.createComment(initialComment)
 
   const containerName = 'geyser-pr-' + issue.number
-  removeContainer(containerName, () => {
-    appendComment(context, repoOwner, repoName, issueComment, '\n\nDone.')
-    removeContainerFolder(issue.number)
+  Utils.removeContainer(containerName, () => {
+    Utils.appendComment(context, repoOwner, repoName, issueComment, '\n\nDone.')
+    Utils.removeContainerFolder(issue.number)
   }, (error) => {
-    appendComment(context, repoOwner, repoName, issueComment, `\n\nUnable to stop and remove test server.\n${error}`)
+    Utils.appendComment(context, repoOwner, repoName, issueComment, `\n\nUnable to stop and remove test server.\n${error}`)
   })
 }
 
-async function appendComment (context, repoOwner, repoName, comment, appendText) {
-  return (await context.github.issues.updateComment({ owner: repoOwner, repo: repoName, comment_id: comment.id, body: comment.body + appendText })).data
-}
-
-function getNiceDate () {
-  return new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '') + ' UTC'
-}
-
+/**
+ * Remove the old docker container if it exists and update the comment with the status
+ * Then call the next step {@see #startTestingDocker}
+ *
+ * @param {import('probot').Application} app The probot app instance
+ * @param {import('probot').Context} context The webhook context
+ * @param {import('probot').Octokit.IssuesCreateCommentResponse} issueComment The existing issue comment
+ * @param {String} individualPRFolder The path of the PR folder
+ */
 async function buildTestingDocker (app, context, issueComment, individualPRFolder) {
   const issue = context.payload.issue
   const repoOwner = context.payload.repository.owner.login
@@ -183,9 +201,9 @@ async function buildTestingDocker (app, context, issueComment, individualPRFolde
 
   const containerName = 'geyser-pr-' + issue.number
 
-  issueComment = await appendComment(context, repoOwner, repoName, issueComment, '\n\nFinished download, setting up docker container...')
+  issueComment = await Utils.appendComment(context, repoOwner, repoName, issueComment, '\n\nFinished download, setting up docker container...')
 
-  removeContainer(containerName, () => {
+  Utils.removeContainer(containerName, () => {
     startTestingDocker(app, context, issueComment, individualPRFolder)
   }, (error) => {
     app.log('Error on deletion of existing container: ' + error)
@@ -193,6 +211,14 @@ async function buildTestingDocker (app, context, issueComment, individualPRFolde
   })
 }
 
+/**
+ * Build and start the docker container and update the comment with the connection details
+ *
+ * @param {import('probot').Application} app The probot app instance
+ * @param {import('probot').Context} context The webhook context
+ * @param {import('probot').Octokit.IssuesCreateCommentResponse} issueComment The existing issue comment
+ * @param {String} individualPRFolder The path of the PR folder
+ */
 async function startTestingDocker (app, context, issueComment, individualPRFolder) {
   const issue = context.payload.issue
   const repoOwner = context.payload.repository.owner.login
@@ -220,35 +246,7 @@ async function startTestingDocker (app, context, issueComment, individualPRFolde
     .then(container => container.status())
     .then(status => {
       const port = status.data.NetworkSettings.Ports['19132/udp'][0].HostPort
-      appendComment(context, repoOwner, repoName, issueComment, `\n\nBuilt docker container.\n\nConnect via ${serverIP}:${port} (\`minecraft://?addExternalServer=Test%20PR%23${issue.number}|${serverIP}:${port}\`)`)
+      Utils.appendComment(context, repoOwner, repoName, issueComment, `\n\nBuilt docker container.\n\nConnect via ${serverIP}:${port} (\`minecraft://?addExternalServer=Test%20PR%23${issue.number}|${serverIP}:${port}\`)`)
     })
-    .catch(error => appendComment(context, repoOwner, repoName, issueComment, `\n\nFailed creating and starting docker container.\n${error}`))
-}
-
-function removeContainer (containerName, callback, errorCallback) {
-  const existingContainer = docker.container.get(containerName)
-  existingContainer.stop({ t: 10 })
-    .then(() => {
-      if (callback !== undefined) {
-        callback()
-      }
-    })
-    .catch((error) => {
-      if (errorCallback !== undefined) {
-        errorCallback(error)
-      }
-    })
-}
-
-/**
- * Remove the container folder if it exists
- *
- * @param {String} prNumber The PR to remove the container of
- */
-function removeContainerFolder (prNumber) {
-  const individualPRFolder = `${prFolder}/${prNumber}`
-
-  if (fs.existsSync(individualPRFolder)) {
-    fs.rmdirSync(individualPRFolder, { recursive: true })
-  }
+    .catch(error => Utils.appendComment(context, repoOwner, repoName, issueComment, `\n\nFailed creating and starting docker container.\n${error}`))
 }
