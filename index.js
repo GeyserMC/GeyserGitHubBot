@@ -13,7 +13,7 @@ const serverIP = ip.address()
 
 Utils.setup(docker, prFolder)
 
-const allowedOwners = ['GeyserMC', 'rtm516']
+const allowedOwners = ['GeyserMC']
 
 // Create the PR folder
 if (!fs.existsSync(prFolder)) {
