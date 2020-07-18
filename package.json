@@ -14,7 +14,7 @@
     "probot-app"
   ],
   "scripts": {
-    "dev": "nodemon",
+    "dev": "nodemon --ignore './pr/'",
     "start": "probot run ./index.js",
     "lint": "standard --fix"
   },
