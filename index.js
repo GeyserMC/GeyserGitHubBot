@@ -35,6 +35,12 @@ module.exports = app => {
 
   // Remove a container (if it exists) when a PR is closed and/or merged
   app.on('pull_request.closed', async context => {
+    const repoOwner = context.payload.repository.owner.login
+
+    if (!allowedOwners.includes(repoOwner)) {
+      return
+    }
+
     const prNumber = context.payload.number
     const containerName = 'geyser-pr-' + prNumber
     app.log(`PR #${prNumber} closed/merged, removing container if it exists!`)
