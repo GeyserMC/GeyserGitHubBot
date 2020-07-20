@@ -9,7 +9,7 @@ rm PR*.zip
 java -jar Geyser.jar &
 
 # Sleep for 5 seconds to generate config and base locale
-sleep 5
+sleep 10
 
 # Kill the server 
 pkill java

@@ -248,7 +248,10 @@ async function startTestingDocker (app, context, issueComment, individualPRFolde
         '19132/udp': [{ HostPort: '' }]
       },
       AutoRemove: true
-    }
+    },
+    Env: [
+      `MOTD="Test PR#${issue.number}"`
+    ]
   })
     .then(container => container.start())
     .then(container => container.status())
