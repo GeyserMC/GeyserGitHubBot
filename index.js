@@ -250,7 +250,7 @@ async function startTestingDocker (app, context, issueComment, individualPRFolde
       AutoRemove: true
     },
     Env: [
-      `MOTD="Test PR#${issue.number}"`
+      `MOTD=Test PR#${issue.number}`
     ]
   })
     .then(container => container.start())
