@@ -6,7 +6,7 @@ unzip PR*.zip
 rm PR*.zip
 
 # Run the jar in the background
-java -jar Geyser.jar &
+java -Xms512M -Xmx512M -jar Geyser.jar &
 
 # Sleep for 5 seconds to generate config and base locale
 sleep 10
@@ -24,10 +24,10 @@ sed -i 's/100/10/g' config.yml # max-players
 sed -i 's/cache-chunks: false/cache-chunks: true/g' config.yml
 
 # Start Geyser
-java -jar Geyser.jar &
+java -Xms512M -Xmx512M -jar Geyser.jar &
 
 # Sleep 24h
-sleep 24h
+sleep 4h
 
 # Kill the server
 pkill java
