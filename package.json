@@ -21,7 +21,7 @@
   "dependencies": {
     "ip": "^1.1.5",
     "node-docker-api": "^1.1.22",
-    "probot": "^9.5.3"
+    "probot": "^10.17.2"
   },
   "devDependencies": {
     "nodemon": "^2.0.0",

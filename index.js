@@ -30,7 +30,7 @@ if (!fs.existsSync(floodgateKey)) {
  * This is the main entrypoint to your Probot app
  * @param {import('probot').Application} app
  */
-module.exports = app => {
+module.exports = ({ app }) => {
   app.log('Loaded!')
 
   // Remove a container (if it exists) when a PR is closed and/or merged
