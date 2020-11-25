@@ -1,6 +1,6 @@
 # This is the docker file for the test server instances
 # Based on the standard one 
-FROM openjdk:8-jre-slim
+FROM openjdk:11-jre-slim
 
 LABEL author="GeyserMC Team" maintainer="support@geysermc.org"
 
