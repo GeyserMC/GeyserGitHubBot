@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "dev": "nodemon --ignore './pr/'",
-    "start": "probot run ./index.js",
+    "start": "probot run -H 127.0.0.1 ./index.js",
     "lint": "standard --fix"
   },
   "dependencies": {
