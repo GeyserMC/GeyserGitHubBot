@@ -19,7 +19,7 @@
     "lint": "standard --fix"
   },
   "dependencies": {
-    "ip": "^1.1.5",
+    "ip": "^1.1.8",
     "node-docker-api": "^1.1.22",
     "probot": "^10.17.2"
   },
